@@ -1,16 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { z } from 'zod';
+import { supabaseAdmin } from '@/lib/supabase';
 
 // --- Input validation schema ---
 const CheckoutSchema = z.object({
-  // Allow optional client-generated ID; server will generate a secure one
-  orderId: z.string().optional(),
   amount: z.number().positive().max(10_000_000), // max ~GYD 10M
   // Accept Guyanese mobile numbers: 7-digit after optional +592 prefix
   customerPhone: z.string().regex(
     /^(?:\+?592)?[6-7]\d{6}$/,
     'Must be a valid Guyanese mobile number (e.g. 6001234 or 5926001234)'
+  ),
+  items: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      price: z.number().positive(),
+      quantity: z.number().int().positive(),
+    })
   ),
 });
 
@@ -26,13 +33,36 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { amount, customerPhone } = parsed.data;
+    const { amount, customerPhone, items } = parsed.data;
     // Always generate a server-side collision-safe order ID
     const orderId = `ORD-${crypto.randomUUID()}`;
 
     const merchantId = process.env.MMG_MERCHANT_ID || 'MOCK_MERCHANT';
     const clientId   = process.env.MMG_CLIENT_ID   || 'MOCK_CLIENT';
     const baseUrl    = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+
+    // Insert pending order into Supabase
+    if (supabaseAdmin) {
+      const { error: dbError } = await supabaseAdmin
+        .from('orders')
+        .insert({
+          id: orderId,
+          amount,
+          customer_phone: customerPhone,
+          items,
+          status: 'pending',
+        });
+
+      if (dbError) {
+        console.error('Failed to log order to Supabase:', dbError);
+        return NextResponse.json(
+          { error: 'Failed to create order record' },
+          { status: 500 }
+        );
+      }
+    } else {
+      console.warn('Supabase Admin Client not initialized. Order not recorded in database.');
+    }
 
     // MMG_PUBLIC_KEY = the PUBLIC key issued BY MMG to you (their public cert).
     // You encrypt with it; MMG decrypts with their private key on their server.
@@ -50,7 +80,7 @@ export async function POST(req: NextRequest) {
       customerPhone,
       responseUrl: `${baseUrl}/checkout/success`,
       errorUrl:    `${baseUrl}/checkout/cancel`,
-      notifyUrl:   `${process.env.BACKEND_WP_URL || 'http://localhost:8080'}/wp-json/mmg-webhook/v1/status`,
+      notifyUrl:   `${baseUrl}/api/checkout/webhook/mmg`,
     };
 
     let encryptedHex = 'MOCK_ENCRYPTED_PAYLOAD_NO_KEY_CONFIGURED';

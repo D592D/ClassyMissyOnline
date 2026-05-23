@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { mockProducts } from "@/lib/mockData";
-import { fetchLiveProducts } from "@/lib/wp-graphql";
+import { fetchLiveProducts } from "@/lib/products";
 import ProductDetailClient from "./ProductDetailClient";
 import type { Metadata } from "next";
 

@@ -38,6 +38,12 @@ export default function CartDrawer() {
         body: JSON.stringify({
           amount: total,
           customerPhone: phone.replace(/[\s\-()]/g, ""),
+          items: cart.map(item => ({
+            id: item.id,
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity
+          })),
         }),
       });
 

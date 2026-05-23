@@ -1,5 +1,5 @@
 import { mockProducts } from "@/lib/mockData";
-import { fetchLiveProducts } from "@/lib/wp-graphql";
+import { fetchLiveProducts } from "@/lib/products";
 import ProductGrid from "@/components/ProductGrid";
 import CartDrawer from "@/components/CartDrawer";
 import Header from "@/components/Header";
