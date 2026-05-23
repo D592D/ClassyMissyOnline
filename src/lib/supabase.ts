@@ -16,7 +16,8 @@ if (process.env.NODE_ENV === 'development' && !isSupabaseConfigured) {
 export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
-        persistSession: false, // stateless e-commerce client
+        persistSession: true, // enable session persistence in browser for Admin Dashboard
+        detectSessionInUrl: true,
       },
     })
   : null as any;
