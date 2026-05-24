@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Header from "@/components/Header";
 import { CartProvider } from "@/components/CartContext";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 import { 
   Sparkles, 
   Calendar, 
@@ -93,6 +94,40 @@ const SERVICES: Service[] = [
 
 const TIME_SLOTS = ["9:00 AM", "11:00 AM", "1:00 PM", "3:00 PM", "5:00 PM"];
 
+interface ShowcaseItem {
+  id: string;
+  title: string;
+  tag: string;
+  image_url: string;
+}
+
+const MOCK_SHOWCASE: ShowcaseItem[] = [
+  {
+    id: "mock-1",
+    title: "Signature Soft Glam",
+    image_url: "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=600&q=80",
+    tag: "Luminous Skin"
+  },
+  {
+    id: "mock-2",
+    title: "Royal Bridal",
+    image_url: "https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?auto=format&fit=crop&w=600&q=80",
+    tag: "Timeless HD"
+  },
+  {
+    id: "mock-3",
+    title: "Photoshoot Special",
+    image_url: "https://images.unsplash.com/photo-1512496015851-a90fb38ba796?auto=format&fit=crop&w=600&q=80",
+    tag: "Cut-Crease Glam"
+  },
+  {
+    id: "mock-4",
+    title: "Editorial Radiant",
+    image_url: "https://images.unsplash.com/photo-1503249023995-51b0f3778ccf?auto=format&fit=crop&w=600&q=80",
+    tag: "Satin Finish"
+  }
+];
+
 export default function BeautyBookingPage() {
   const [activeTab, setActiveTab] = useState<"glam" | "bridal" | "class">("glam");
   const [selectedService, setSelectedService] = useState<Service | null>(null);
@@ -103,10 +138,38 @@ export default function BeautyBookingPage() {
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
 
+  // Showcase state
+  const [showcase, setShowcase] = useState<ShowcaseItem[]>([]);
+  const [showcaseLoading, setShowcaseLoading] = useState(true);
+
   // UI Flow States
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+
+  // Load dynamic showcase items from Supabase
+  useEffect(() => {
+    const loadShowcase = async () => {
+      if (!isSupabaseConfigured || !supabase) {
+        setShowcaseLoading(false);
+        return;
+      }
+      try {
+        const { data, error } = await supabase
+          .from("showcase")
+          .select("*")
+          .order("created_at", { ascending: true });
+
+        if (error) throw error;
+        setShowcase(data || []);
+      } catch (err) {
+        console.error("Error loading showcase items:", err);
+      } finally {
+        setShowcaseLoading(false);
+      }
+    };
+    loadShowcase();
+  }, []);
 
   const filteredServices = SERVICES.filter(s => s.category === activeTab);
 
@@ -300,46 +363,31 @@ export default function BeautyBookingPage() {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {[
-                {
-                  title: "Signature Soft Glam",
-                  img: "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=600&q=80",
-                  tag: "Luminous Skin"
-                },
-                {
-                  title: "Royal Bridal",
-                  img: "https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?auto=format&fit=crop&w=600&q=80",
-                  tag: "Timeless HD"
-                },
-                {
-                  title: "Photoshoot Special",
-                  img: "https://images.unsplash.com/photo-1512496015851-a90fb38ba796?auto=format&fit=crop&w=600&q=80",
-                  tag: "Cut-Crease Glam"
-                },
-                {
-                  title: "Editorial Radiant",
-                  img: "https://images.unsplash.com/photo-1503249023995-51b0f3778ccf?auto=format&fit=crop&w=600&q=80",
-                  tag: "Satin Finish"
-                }
-              ].map((work, idx) => (
-                <div 
-                  key={idx} 
-                  className="relative group rounded-3xl overflow-hidden shadow-sm aspect-[4/5] bg-slate-100 border border-slate-200/50 hover:border-pink-300 hover:shadow-lg transition-all duration-300 hover:-translate-y-1"
-                >
-                  <img 
-                    src={work.img} 
-                    alt={work.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  />
-                  {/* Glassmorphic overlay details */}
-                  <div className="absolute inset-x-3 bottom-3 p-3 bg-white/80 backdrop-blur-md border border-white/40 rounded-2xl flex flex-col justify-end pointer-events-none transform translate-y-1 group-hover:translate-y-0 transition-transform duration-300">
-                    <span className="text-[8px] text-pink-600 font-black uppercase tracking-widest mb-0.5">{work.tag}</span>
-                    <span className="font-extrabold text-slate-800 text-[10px] leading-snug">{work.title}</span>
+            {showcaseLoading ? (
+              <div className="py-12 flex justify-center">
+                <div className="w-8 h-8 border-4 border-pink-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {(showcase.length > 0 ? showcase : MOCK_SHOWCASE).map((work) => (
+                  <div 
+                    key={work.id} 
+                    className="relative group rounded-3xl overflow-hidden shadow-sm aspect-[4/5] bg-slate-100 border border-slate-200/50 hover:border-pink-300 hover:shadow-lg transition-all duration-300 hover:-translate-y-1"
+                  >
+                    <img 
+                      src={work.image_url} 
+                      alt={work.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    />
+                    {/* Glassmorphic overlay details */}
+                    <div className="absolute inset-x-3 bottom-3 p-3 bg-white/80 backdrop-blur-md border border-white/40 rounded-2xl flex flex-col justify-end pointer-events-none transform translate-y-1 group-hover:translate-y-0 transition-transform duration-300">
+                      <span className="text-[8px] text-pink-600 font-black uppercase tracking-widest mb-0.5">{work.tag}</span>
+                      <span className="font-extrabold text-slate-800 text-[10px] leading-snug">{work.title}</span>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </section>
         </main>
 

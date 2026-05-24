@@ -23,7 +23,8 @@ import {
   X,
   FileCheck,
   Clock,
-  Phone
+  Phone,
+  Sparkles
 } from "lucide-react";
 
 interface Order {
@@ -51,10 +52,18 @@ interface Booking {
   mmg_reference?: string;
 }
 
+interface ShowcaseItem {
+  id: string;
+  created_at: string;
+  title: string;
+  tag: string;
+  image_url: string;
+}
+
 export default function AdminDashboardPage() {
   const router = useRouter();
   const [sessionChecked, setSessionChecked] = useState(false);
-  const [activeTab, setActiveTab] = useState<"products" | "orders" | "bookings">("products");
+  const [activeTab, setActiveTab] = useState<"products" | "orders" | "bookings" | "showcase">("products");
 
   // Products state
   const [products, setProducts] = useState<Product[]>([]);
@@ -69,6 +78,17 @@ export default function AdminDashboardPage() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bookingsLoading, setBookingsLoading] = useState(true);
   const [bookingSearch, setBookingSearch] = useState("");
+
+  // Showcase state
+  const [showcase, setShowcase] = useState<ShowcaseItem[]>([]);
+  const [showcaseLoading, setShowcaseLoading] = useState(true);
+  const [showcaseSearch, setShowcaseSearch] = useState("");
+
+  // New Showcase Form states
+  const [newShowcaseTitle, setNewShowcaseTitle] = useState("");
+  const [newShowcaseTag, setNewShowcaseTag] = useState("");
+  const [newShowcaseImg, setNewShowcaseImg] = useState("");
+  const [showcaseUploading, setShowcaseUploading] = useState(false);
 
   // Form Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -102,6 +122,7 @@ export default function AdminDashboardPage() {
         loadProducts();
         loadOrders();
         loadBookings();
+        loadShowcase();
       }
     };
     checkSession();
@@ -178,6 +199,93 @@ export default function AdminDashboardPage() {
       loadBookings();
     } catch (err: any) {
       alert(`Failed to update booking status: ${err.message}`);
+    }
+  };
+
+  // Load showcase items from Supabase
+  const loadShowcase = async () => {
+    if (!supabase) return;
+    setShowcaseLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("showcase")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setShowcase(data || []);
+    } catch (err) {
+      console.error("Error loading showcase items:", err);
+    } finally {
+      setShowcaseLoading(false);
+    }
+  };
+
+  const handleCreateShowcase = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newShowcaseTitle || !newShowcaseTag || !newShowcaseImg) {
+      alert("Please fill in all showcase fields.");
+      return;
+    }
+    try {
+      const { error } = await supabase!
+        .from("showcase")
+        .insert({
+          title: newShowcaseTitle,
+          tag: newShowcaseTag,
+          image_url: newShowcaseImg,
+        });
+
+      if (error) throw error;
+      setNewShowcaseTitle("");
+      setNewShowcaseTag("");
+      setNewShowcaseImg("");
+      loadShowcase();
+    } catch (err: any) {
+      alert(`Save failed: ${err.message}`);
+    }
+  };
+
+  const handleDeleteShowcase = async (id: string, title: string) => {
+    if (!confirm(`Are you sure you want to remove ${title} from your showcase?`)) return;
+    try {
+      const { error } = await supabase!
+        .from("showcase")
+        .delete()
+        .eq("id", id);
+
+      if (error) throw error;
+      loadShowcase();
+    } catch (err: any) {
+      alert(`Delete failed: ${err.message}`);
+    }
+  };
+
+  const handleShowcaseImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !supabase) return;
+
+    setShowcaseUploading(true);
+    try {
+      const fileExt = file.name.split(".").pop();
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+      const filePath = `showcase/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("product-images")
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from("product-images")
+        .getPublicUrl(filePath);
+
+      setNewShowcaseImg(publicUrl);
+    } catch (err: any) {
+      alert(`Upload failed: ${err.message || err}`);
+    } finally {
+      setShowcaseUploading(false);
     }
   };
 
@@ -400,6 +508,17 @@ export default function AdminDashboardPage() {
                   {bookings.filter((b) => b.status === "pending").length}
                 </span>
               )}
+            </button>
+            <button
+              onClick={() => setActiveTab("showcase")}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${
+                activeTab === "showcase"
+                  ? "bg-pink-50 text-pink-600 shadow-sm"
+                  : "text-gray-500 hover:bg-slate-50 hover:text-gray-800"
+              }`}
+            >
+              <Sparkles className="w-4 h-4" />
+              Showcase Portfolio
             </button>
           </nav>
         </div>
@@ -640,7 +759,7 @@ export default function AdminDashboardPage() {
               </div>
             )}
           </div>
-        ) : (
+        ) : activeTab === "bookings" ? (
           <div>
             {/* Bookings Tracker View */}
             <div className="mb-8">
@@ -772,6 +891,151 @@ export default function AdminDashboardPage() {
                           </div>
                         )}
                       </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div>
+            {/* Dynamic Showcase Portfolio Management View */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+              <div>
+                <h1 className="text-3xl font-black text-slate-800">Showcase Portfolio</h1>
+                <p className="text-gray-500 mt-1">Manage makeup and beauty artwork images shown in the booking tab.</p>
+              </div>
+            </div>
+
+            {/* Quick Add Form Section */}
+            <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm mb-10">
+              <h2 className="text-lg font-black text-slate-850 mb-4 flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-pink-600 fill-pink-50" /> Add Portfolio Artwork
+              </h2>
+              <form onSubmit={handleCreateShowcase} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                      Artwork Title *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Signature Soft Glam"
+                      className="w-full border border-slate-200 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-pink-500 transition-all font-semibold"
+                      value={newShowcaseTitle}
+                      onChange={(e) => setNewShowcaseTitle(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                      Description Tag *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Luminous Skin, Timeless HD"
+                      className="w-full border border-slate-200 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-pink-500 transition-all font-semibold"
+                      value={newShowcaseTag}
+                      onChange={(e) => setNewShowcaseTag(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                {/* Showcase Image Upload Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center border-t border-slate-100 pt-4">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                      Select Artwork Image *
+                    </label>
+                    <div className="border-2 border-dashed border-slate-200 hover:border-pink-300 p-6 rounded-2xl flex flex-col items-center justify-center text-center cursor-pointer transition-colors relative">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                        onChange={handleShowcaseImageUpload}
+                        disabled={showcaseUploading}
+                      />
+                      <Upload className="w-6 h-6 text-gray-400 mb-2" />
+                      <p className="text-xs font-bold text-gray-500">
+                        {showcaseUploading ? "Uploading image..." : "Upload from Device"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {newShowcaseImg ? (
+                    <div className="relative h-28 border border-slate-100 rounded-2xl overflow-hidden shadow-inner bg-slate-50 flex items-center justify-center">
+                      <img
+                        src={newShowcaseImg}
+                        alt="Upload preview"
+                        className="w-full h-full object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setNewShowcaseImg("")}
+                        className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 shadow-md hover:bg-red-600 transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="h-28 border border-slate-200 border-dashed rounded-2xl flex items-center justify-center text-gray-300 text-xs">
+                      No image selected
+                    </div>
+                  )}
+                </div>
+
+                <div className="border-t border-slate-100 pt-4 flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={showcaseUploading || !newShowcaseTitle || !newShowcaseTag || !newShowcaseImg}
+                    className="px-5 py-3 rounded-xl bg-gradient-to-r from-pink-600 to-purple-600 text-white font-bold transition-all shadow-md disabled:opacity-50 active:scale-95 text-xs uppercase tracking-wider"
+                  >
+                    Publish to Booking Tab
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* List Showcase Catalog Grid */}
+            <h2 className="text-lg font-black text-slate-850 mb-6 flex items-center gap-2">
+              Active Showcase Catalog ({showcase.length})
+            </h2>
+
+            {showcaseLoading ? (
+              <div className="py-20 flex justify-center">
+                <div className="w-8 h-8 border-4 border-pink-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : showcase.length === 0 ? (
+              <div className="bg-white border border-slate-200 rounded-3xl p-16 text-center text-gray-400">
+                <Sparkles className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                <p className="font-semibold text-gray-500">Your showcase portfolio is empty</p>
+                <p className="text-sm mt-1">Upload artwork above to populate your bookings page catalog.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
+                {showcase.map((item) => (
+                  <div
+                    key={item.id}
+                    className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden group hover:shadow-md transition-shadow relative flex flex-col justify-between"
+                  >
+                    <div className="relative aspect-[4/5] bg-slate-100">
+                      <img
+                        src={item.image_url}
+                        alt={item.title}
+                        className="w-full h-full object-cover"
+                      />
+                      <button
+                        onClick={() => handleDeleteShowcase(item.id, item.title)}
+                        className="absolute top-3 right-3 p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-full shadow-md hover:scale-105 active:scale-95 transition-all flex items-center justify-center"
+                        aria-label={`Delete ${item.title}`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="p-4 border-t border-slate-100 bg-white">
+                      <span className="text-[8px] text-pink-600 font-extrabold uppercase tracking-widest block mb-0.5">{item.tag}</span>
+                      <h3 className="font-bold text-slate-800 text-xs truncate">{item.title}</h3>
                     </div>
                   </div>
                 ))}
