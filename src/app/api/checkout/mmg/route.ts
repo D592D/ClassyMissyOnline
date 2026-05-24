@@ -3,10 +3,10 @@ import crypto from 'crypto';
 import { z } from 'zod';
 import { supabaseAdmin } from '@/lib/supabase';
 
-// --- Input validation schema ---
-const CheckoutSchema = z.object({
+// --- Input validation schemas ---
+const ProductCheckoutSchema = z.object({
+  type: z.literal('product').optional(),
   amount: z.number().positive().max(10_000_000), // max ~GYD 10M
-  // Accept Guyanese mobile numbers: 7-digit after optional +592 prefix
   customerPhone: z.string().regex(
     /^(?:\+?592)?[6-7]\d{6}$/,
     'Must be a valid Guyanese mobile number (e.g. 6001234 or 5926001234)'
@@ -21,47 +21,117 @@ const CheckoutSchema = z.object({
   ),
 });
 
+const BookingCheckoutSchema = z.object({
+  type: z.literal('booking'),
+  amount: z.number().positive().max(1_000_000), // deposit amount
+  customerPhone: z.string().regex(
+    /^(?:\+?592)?[6-7]\d{6}$/,
+    'Must be a valid Guyanese mobile number (e.g. 6001234 or 5926001234)'
+  ),
+  customerName: z.string().min(2, 'Name is required'),
+  serviceId: z.string(),
+  serviceName: z.string(),
+  price: z.number().positive(),
+  bookingDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD'),
+  bookingTime: z.string(),
+});
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const parsed = CheckoutSchema.safeParse(body);
+    const type = body.type || 'product';
 
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: 'Invalid request', details: parsed.error.flatten().fieldErrors },
-        { status: 400 }
-      );
-    }
-
-    const { amount, customerPhone, items } = parsed.data;
-    // Always generate a server-side collision-safe order ID
-    const orderId = `ORD-${crypto.randomUUID()}`;
+    let amount: number;
+    let customerPhone: string;
+    let orderId: string;
+    let responseUrl: string;
 
     const merchantId = process.env.MMG_MERCHANT_ID || 'MOCK_MERCHANT';
     const clientId   = process.env.MMG_CLIENT_ID   || 'MOCK_CLIENT';
     const baseUrl    = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
 
-    // Insert pending order into Supabase
-    if (supabaseAdmin) {
-      const { error: dbError } = await supabaseAdmin
-        .from('orders')
-        .insert({
-          id: orderId,
-          amount,
-          customer_phone: customerPhone,
-          items,
-          status: 'pending',
-        });
-
-      if (dbError) {
-        console.error('Failed to log order to Supabase:', dbError);
+    if (type === 'booking') {
+      const parsed = BookingCheckoutSchema.safeParse(body);
+      if (!parsed.success) {
         return NextResponse.json(
-          { error: 'Failed to create order record' },
-          { status: 500 }
+          { error: 'Invalid request', details: parsed.error.flatten().fieldErrors },
+          { status: 400 }
         );
       }
+
+      const booking = parsed.data;
+      amount = booking.amount;
+      customerPhone = booking.customerPhone;
+      orderId = `BK-${crypto.randomUUID()}`;
+
+      // Insert pending booking into Supabase
+      if (supabaseAdmin) {
+        const { error: dbError } = await supabaseAdmin
+          .from('bookings')
+          .insert({
+            id: orderId,
+            service_id: booking.serviceId,
+            service_name: booking.serviceName,
+            price: booking.price,
+            deposit_amount: amount,
+            customer_phone: customerPhone,
+            customer_name: booking.customerName,
+            booking_date: booking.bookingDate,
+            booking_time: booking.bookingTime,
+            status: 'pending',
+          });
+
+        if (dbError) {
+          console.error('Failed to log booking to Supabase:', dbError);
+          return NextResponse.json(
+            { error: 'Failed to create booking record' },
+            { status: 500 }
+          );
+        }
+      } else {
+        console.warn('Supabase Admin Client not initialized. Booking not recorded in database.');
+      }
+
+      responseUrl = `${baseUrl}/beauty/success?serviceName=${encodeURIComponent(booking.serviceName)}&date=${booking.bookingDate}&time=${encodeURIComponent(booking.bookingTime)}&deposit=${amount}&bookingId=${orderId}`;
     } else {
-      console.warn('Supabase Admin Client not initialized. Order not recorded in database.');
+      // Product checkout
+      const parsed = ProductCheckoutSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: 'Invalid request', details: parsed.error.flatten().fieldErrors },
+          { status: 400 }
+        );
+      }
+
+      const order = parsed.data;
+      amount = order.amount;
+      customerPhone = order.customerPhone;
+      orderId = `ORD-${crypto.randomUUID()}`;
+
+      // Insert pending order into Supabase
+      if (supabaseAdmin) {
+        const { error: dbError } = await supabaseAdmin
+          .from('orders')
+          .insert({
+            id: orderId,
+            amount,
+            customer_phone: customerPhone,
+            items: order.items,
+            status: 'pending',
+          });
+
+        if (dbError) {
+          console.error('Failed to log order to Supabase:', dbError);
+          return NextResponse.json(
+            { error: 'Failed to create order record' },
+            { status: 500 }
+          );
+        }
+      } else {
+        console.warn('Supabase Admin Client not initialized. Order not recorded in database.');
+      }
+
+      responseUrl = `${baseUrl}/checkout/success`;
     }
 
     // MMG_PUBLIC_KEY = the PUBLIC key issued BY MMG to you (their public cert).
@@ -78,8 +148,8 @@ export async function POST(req: NextRequest) {
       currency: 'GYD',
       orderId,
       customerPhone,
-      responseUrl: `${baseUrl}/checkout/success`,
-      errorUrl:    `${baseUrl}/checkout/cancel`,
+      responseUrl,
+      errorUrl:    type === 'booking' ? `${baseUrl}/beauty/cancel` : `${baseUrl}/checkout/cancel`,
       notifyUrl:   `${baseUrl}/api/checkout/webhook/mmg`,
     };
 

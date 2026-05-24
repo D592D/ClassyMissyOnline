@@ -21,7 +21,9 @@ import {
   AlertCircle,
   Calendar,
   X,
-  FileCheck
+  FileCheck,
+  Clock,
+  Phone
 } from "lucide-react";
 
 interface Order {
@@ -34,10 +36,25 @@ interface Order {
   mmg_reference?: string;
 }
 
+interface Booking {
+  id: string;
+  created_at: string;
+  service_id: string;
+  service_name: string;
+  price: number;
+  deposit_amount: number;
+  customer_phone: string;
+  customer_name: string;
+  booking_date: string;
+  booking_time: string;
+  status: "pending" | "paid" | "cancelled";
+  mmg_reference?: string;
+}
+
 export default function AdminDashboardPage() {
   const router = useRouter();
   const [sessionChecked, setSessionChecked] = useState(false);
-  const [activeTab, setActiveTab] = useState<"products" | "orders">("products");
+  const [activeTab, setActiveTab] = useState<"products" | "orders" | "bookings">("products");
 
   // Products state
   const [products, setProducts] = useState<Product[]>([]);
@@ -47,6 +64,11 @@ export default function AdminDashboardPage() {
   // Orders state
   const [orders, setOrders] = useState<Order[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
+
+  // Bookings state
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [bookingsLoading, setBookingsLoading] = useState(true);
+  const [bookingSearch, setBookingSearch] = useState("");
 
   // Form Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -79,6 +101,7 @@ export default function AdminDashboardPage() {
         setSessionChecked(true);
         loadProducts();
         loadOrders();
+        loadBookings();
       }
     };
     checkSession();
@@ -119,6 +142,42 @@ export default function AdminDashboardPage() {
       console.error("Error loading orders:", err);
     } finally {
       setOrdersLoading(false);
+    }
+  };
+
+  // Load bookings from Supabase
+  const loadBookings = async () => {
+    if (!supabase) return;
+    setBookingsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("bookings")
+        .select("*")
+        .order("booking_date", { ascending: true })
+        .order("booking_time", { ascending: true });
+
+      if (error) throw error;
+      setBookings(data || []);
+    } catch (err) {
+      console.error("Error loading bookings:", err);
+    } finally {
+      setBookingsLoading(false);
+    }
+  };
+
+  const handleUpdateBookingStatus = async (id: string, newStatus: "paid" | "cancelled") => {
+    if (!supabase) return;
+    if (!confirm(`Are you sure you want to mark this booking as ${newStatus}?`)) return;
+    try {
+      const { error } = await supabase
+        .from("bookings")
+        .update({ status: newStatus })
+        .eq("id", id);
+
+      if (error) throw error;
+      loadBookings();
+    } catch (err: any) {
+      alert(`Failed to update booking status: ${err.message}`);
     }
   };
 
@@ -271,6 +330,13 @@ export default function AdminDashboardPage() {
       p.category?.toLowerCase().includes(productSearch.toLowerCase())
   );
 
+  const filteredBookings = bookings.filter(
+    (b) =>
+      b.customer_name.toLowerCase().includes(bookingSearch.toLowerCase()) ||
+      b.customer_phone.includes(bookingSearch) ||
+      b.service_name.toLowerCase().includes(bookingSearch.toLowerCase())
+  );
+
   if (!sessionChecked) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -316,6 +382,22 @@ export default function AdminDashboardPage() {
               {orders.filter((o) => o.status === "pending").length > 0 && (
                 <span className="ml-auto bg-amber-500 text-white text-[10px] w-5 h-5 flex items-center justify-center rounded-full font-bold">
                   {orders.filter((o) => o.status === "pending").length}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab("bookings")}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${
+                activeTab === "bookings"
+                  ? "bg-pink-50 text-pink-600 shadow-sm"
+                  : "text-gray-500 hover:bg-slate-50 hover:text-gray-800"
+              }`}
+            >
+              <Calendar className="w-4 h-4" />
+              Bookings Manager
+              {bookings.filter((b) => b.status === "pending").length > 0 && (
+                <span className="ml-auto bg-amber-500 text-white text-[10px] w-5 h-5 flex items-center justify-center rounded-full font-bold">
+                  {bookings.filter((b) => b.status === "pending").length}
                 </span>
               )}
             </button>
@@ -453,7 +535,7 @@ export default function AdminDashboardPage() {
               </div>
             )}
           </div>
-        ) : (
+        ) : activeTab === "orders" ? (
           <div>
             {/* Orders Tracking View */}
             <div className="mb-8">
@@ -551,6 +633,144 @@ export default function AdminDashboardPage() {
                             </li>
                           ))}
                         </ul>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div>
+            {/* Bookings Tracker View */}
+            <div className="mb-8">
+              <h1 className="text-3xl font-black text-slate-800">Bookings Catalog</h1>
+              <p className="text-gray-500 mt-1">Manage makeup and masterclass appointments.</p>
+            </div>
+
+            {/* Search and Filters */}
+            <div className="mb-6 bg-white border border-slate-200 p-4 rounded-2xl flex items-center gap-3 shadow-sm max-w-md">
+              <Search className="w-5 h-5 text-gray-400 flex-shrink-0" />
+              <input
+                type="text"
+                placeholder="Search bookings by customer name or service..."
+                className="w-full text-sm outline-none text-slate-700 bg-transparent"
+                value={bookingSearch}
+                onChange={(e) => setBookingSearch(e.target.value)}
+              />
+            </div>
+
+            {bookingsLoading ? (
+              <div className="py-20 flex justify-center">
+                <div className="w-8 h-8 border-4 border-pink-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : filteredBookings.length === 0 ? (
+              <div className="bg-white border border-slate-200 rounded-3xl p-16 text-center text-gray-400">
+                <Calendar className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                <p className="font-semibold text-gray-500">No bookings registered yet</p>
+                <p className="text-sm mt-1">Pending booking records will populate here during checkouts.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {filteredBookings.map((b) => (
+                  <div
+                    key={b.id}
+                    className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col gap-4 hover:shadow-md transition-shadow"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 pb-4">
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-extrabold text-slate-800">{b.id}</span>
+                          <span
+                            className={`inline-flex items-center gap-1.5 text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full border ${
+                              b.status === "paid"
+                                ? "bg-green-50 text-green-700 border-green-200"
+                                : b.status === "pending"
+                                ? "bg-amber-50 text-amber-700 border-amber-200"
+                                : "bg-red-50 text-red-700 border-red-200"
+                            }`}
+                          >
+                            {b.status === "paid" ? (
+                              <>
+                                <CheckCircle className="w-3 h-3" /> Confirmed
+                              </>
+                            ) : b.status === "pending" ? (
+                              <>
+                                <AlertCircle className="w-3 h-3" /> Pending Deposit
+                              </>
+                            ) : (
+                              <>
+                                <XCircle className="w-3 h-3" /> Cancelled
+                              </>
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-4 text-xs text-gray-400 mt-1.5 font-semibold">
+                          <span className="flex items-center gap-1.5">
+                            <Calendar className="w-3.5 h-3.5 text-pink-500" />
+                            {b.booking_date}
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-pink-500" />
+                            {b.booking_time}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-right sm:text-right">
+                        <span className="text-xs text-gray-400 block font-bold uppercase tracking-wider">Deposit Paid</span>
+                        <span className="text-xl font-extrabold text-slate-800">
+                          GYD {b.deposit_amount.toLocaleString()}
+                        </span>
+                        <span className="text-[10px] text-gray-400 block mt-0.5 font-bold uppercase">Total: GYD {b.price.toLocaleString()}</span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-end">
+                      {/* Customer Details */}
+                      <div>
+                        <h4 className="text-xs font-black uppercase tracking-wider text-slate-500 mb-2">Client Details</h4>
+                        <div className="bg-slate-50 border border-slate-100 p-4 rounded-2xl text-sm space-y-1.5">
+                          <p className="flex items-center gap-2 font-bold text-slate-800">
+                            <User className="w-4 h-4 text-gray-400" />
+                            {b.customer_name}
+                          </p>
+                          <p className="flex items-center gap-2 font-semibold text-slate-600">
+                            <Phone className="w-4 h-4 text-gray-400" />
+                            {b.customer_phone}
+                          </p>
+                          {b.mmg_reference && (
+                            <p className="text-xs text-slate-500 font-mono mt-2 pt-2 border-t border-slate-200/40">
+                              MMG Ref: <span className="font-bold text-slate-800">{b.mmg_reference}</span>
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Service Details & Manual Admin Controls */}
+                      <div className="flex flex-col gap-4">
+                        <div>
+                          <h4 className="text-xs font-black uppercase tracking-wider text-slate-500 mb-2">Booked Session</h4>
+                          <div className="bg-white border border-slate-150 p-4 rounded-2xl text-sm font-extrabold text-slate-800 shadow-sm flex items-center justify-between">
+                            <span>{b.service_name}</span>
+                          </div>
+                        </div>
+
+                        {b.status === "pending" && (
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleUpdateBookingStatus(b.id, "paid")}
+                              className="flex-1 inline-flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold uppercase tracking-wider py-3 rounded-xl transition-all shadow-md active:scale-95"
+                            >
+                              <CheckCircle className="w-4 h-4" /> Confirm Paid
+                            </button>
+                            <button
+                              onClick={() => handleUpdateBookingStatus(b.id, "cancelled")}
+                              className="flex-1 inline-flex items-center justify-center gap-2 bg-red-100 hover:bg-red-200 text-red-700 text-xs font-bold uppercase tracking-wider py-3 rounded-xl transition-all active:scale-95"
+                            >
+                              <XCircle className="w-4 h-4" /> Cancel
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
